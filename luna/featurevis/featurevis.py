@@ -6,6 +6,9 @@ import tensorflow as tf
 
 from tensorflow import keras
 from luna.featurevis import images as imgs
+from luna.featurevis import objectives_luna as objectives
+from luna.featurevis import transform_luna_v2 as transform
+
 
 
 def add_noise(img, noise, pctg):
@@ -100,8 +103,8 @@ def gaussian_blur(img, kernel_size=3, sigma=5):
                                   padding='SAME', data_format='NHWC')
 
 
-def visualize_filter(image, model, layer, filter_index, iterations,
-                     learning_rate, noise, blur, scale):
+def visualize_filter(param_f, model, layer, filter_index, iterations,
+                     learning_rate, noise, blur, scale, transforms):
     """Create a feature visualization for a filter in a layer of the model.
 
     Args:
@@ -118,21 +121,112 @@ def visualize_filter(image, model, layer, filter_index, iterations,
     Returns:
         tuple: loss and result image for the process
     """
+
     feature_extractor = get_feature_extractor(model, layer)
+
+    t_image = make_vis_T(param_f, transforms)
+    #loss, vis_op, t_image = T("loss"), T("vis_op"), T("input")
+    #tf.compat.v1.global_variables_initializer().run()
+    #images = []
+
     print('Starting Feature Vis Process')
     for iteration in range(iterations):
         pctg = int(iteration / iterations * 100)
-        image = add_noise(image, noise, pctg)
-        image = blur_image(image, blur, pctg)
-        image = rescale_image(image, scale, pctg)
+        image = add_noise(t_image, noise, pctg)
+        image = blur_image(t_image, blur, pctg)
+        image = rescale_image(t_image, scale, pctg)
         loss, image = gradient_ascent_step(
-            image, feature_extractor, filter_index, learning_rate)
+            t_image, feature_extractor, filter_index, learning_rate)
         print('>>', pctg, '%', end="\r", flush=True)
 
     print('>> 100 %')
     # Decode the resulting input image
     image = imgs.deprocess_image(image[0].numpy())
     return loss, image
+
+
+def make_t_image(param_f):
+    if param_f is None:
+        t_image = imgs.initialize_image_luna(128)
+    elif callable(param_f):
+        t_image = param_f()
+    elif isinstance(param_f, tf.Tensor):
+        t_image = param_f
+    else:
+        raise TypeError("Incompatible type for param_f, " + str(type(param_f)) )
+
+    if not isinstance(t_image, tf.Tensor):
+        raise TypeError("param_f should produce a Tensor, but instead created a "
+                    + str(type(t_image)) )
+    else:
+        return t_image
+
+def make_vis_T(param_f=None, transforms=None):
+    """Even more flexible optimization-base feature vis.
+
+  This function is the inner core of render_vis(), and can be used
+  when render_vis() isn't flexible enough. Unfortunately, it's a bit more
+  tedious to use:
+
+  >  with tf.Graph().as_default() as graph, tf.Session() as sess:
+  >
+  >    T = make_vis_T(model, "mixed4a_pre_relu:0")
+  >    tf.initialize_all_variables().run()
+  >
+  >    for i in range(10):
+  >      T("vis_op").run()
+  >      showarray(T("input").eval()[0])
+
+  This approach allows more control over how the visualizaiton is displayed
+  as it renders. It also allows a lot more flexibility in constructing
+  objectives / params because the session is already in scope.
+
+
+  Args:
+    model: The model to be visualized, from Alex' modelzoo.
+    objective_f: The objective our visualization maximizes.
+      See the objectives module for more details.
+    param_f: Paramaterization of the image we're optimizing.
+      See the paramaterization module for more details.
+      Defaults to a naively paramaterized [1, 128, 128, 3] image.
+    optimizer: Optimizer to optimize with. Either tf.train.Optimizer instance,
+      or a function from (graph, sess) to such an instance.
+      Defaults to Adam with lr .05.
+    transforms: A list of stochastic transformations that get composed,
+      which our visualization should robustly activate the network against.
+      See the transform module for more details.
+      Defaults to [transform.jitter(8)].
+
+  Returns:
+    A function T, which allows access to:
+      * T("vis_op") -- the operation for to optimize the visualization
+      * T("input") -- the visualization itself
+      * T("loss") -- the loss for the visualization
+      * T(layer) -- any layer inside the network
+  """
+
+    t_image = make_t_image(param_f)
+    #objective_f = objectives.as_objective("{}:{}".format(layer, filter_index))
+    #transform_f = make_transform_f(transforms)
+    #t_image = transform_f(t_image)
+    #optimizer =  make_optimizer(tf.compat.v1.train.AdamOptimizer(learning_rate = learning_rate), [])
+    #global_step = tf.compat.v1.train.get_or_create_global_step()
+    #T = model(t_image)
+    #init_global_step = tf.compat.v1.variables_initializer([global_step])
+    #init_global_step.run()
+    #T = import_model(model, transform_f(t_image), t_image)
+    #t_activation = T[:, 2:-2, 2:-2, filter_index]
+    #loss = lambda : tf.reduce_mean(t_activation)
+    #loss = objective_f(T)
+    #vis_op = optimizer.minimize(-loss, global_step=global_step)
+    #local_vars = locals()
+
+    #def T2(name):
+    #    if name in local_vars:
+    #        return local_vars[name]
+    #    else: return T(name)
+
+    return t_image
 
 
 def compute_loss(input_image, model, filter_index):
@@ -192,3 +286,33 @@ def get_feature_extractor(model, layer_name):
     """
     layer = model.get_layer(name=layer_name)
     return keras.Model(inputs=model.inputs, outputs=layer.output)
+
+
+def make_transform_f(transforms):
+    if type(transforms) is not list:
+        transforms = transform.standard_transforms
+    transform_f = transform.compose(transforms)
+    return transform_f
+
+def import_model(model, t_image, t_image_raw):
+
+    model.import_graph(t_image, scope="import", forget_xy_shape=True)
+
+    def T(layer):
+        if layer == "input": return t_image_raw
+        if layer == "labels": return model.labels
+        return t_image.graph.get_tensor_by_name("import/%s:0"%layer)
+
+    return T
+
+def make_optimizer(optimizer, args):
+    if optimizer is None:
+        return tf.keras.optimizers.Adam(0.05)
+    elif callable(optimizer):
+        return optimizer(*args)
+    elif isinstance(optimizer, tf.compat.v1.train.Optimizer):
+        return optimizer
+    else:
+        print("Could not convert optimizer argument to usable optimizer. "
+            "Needs to be one of None, function from (graph, sess) to "
+            "optimizer, or tf.train.Optimizer instance.")
