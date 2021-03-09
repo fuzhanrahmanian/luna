@@ -124,7 +124,7 @@ def visualize_filter(param_f, model, layer, filter_index, iterations,
 
     feature_extractor = get_feature_extractor(model, layer)
 
-    t_image = make_vis_T(param_f, transforms)
+    t_image = make_vis_T(model, layer, filter_index, learning_rate, param_f, transforms)
     #loss, vis_op, t_image = T("loss"), T("vis_op"), T("input")
     #tf.compat.v1.global_variables_initializer().run()
     #images = []
@@ -161,7 +161,7 @@ def make_t_image(param_f):
     else:
         return t_image
 
-def make_vis_T(param_f=None, transforms=None):
+def make_vis_T(model, layer, filter_index, learning_rate, param_f=None, transforms=None):
     """Even more flexible optimization-base feature vis.
 
   This function is the inner core of render_vis(), and can be used
@@ -206,27 +206,27 @@ def make_vis_T(param_f=None, transforms=None):
   """
 
     t_image = make_t_image(param_f)
-    #objective_f = objectives.as_objective("{}:{}".format(layer, filter_index))
-    #transform_f = make_transform_f(transforms)
+    objective_f = objectives.as_objective("{}:{}".format(layer, filter_index))
+    transform_f = make_transform_f(transforms)
     #t_image = transform_f(t_image)
-    #optimizer =  make_optimizer(tf.compat.v1.train.AdamOptimizer(learning_rate = learning_rate), [])
-    #global_step = tf.compat.v1.train.get_or_create_global_step()
-    #T = model(t_image)
+    optimizer =  make_optimizer(tf.compat.v1.train.AdamOptimizer(learning_rate = learning_rate), [])
+    global_step = tf.compat.v1.train.get_or_create_global_step()
+    T = model(t_image)
     #init_global_step = tf.compat.v1.variables_initializer([global_step])
     #init_global_step.run()
     #T = import_model(model, transform_f(t_image), t_image)
     #t_activation = T[:, 2:-2, 2:-2, filter_index]
     #loss = lambda : tf.reduce_mean(t_activation)
-    #loss = objective_f(T)
-    #vis_op = optimizer.minimize(-loss, global_step=global_step)
-    #local_vars = locals()
+    loss = objective_f(T)
+    vis_op = optimizer.minimize(-loss, global_step=global_step)
+    local_vars = locals()
 
-    #def T2(name):
-    #    if name in local_vars:
-    #        return local_vars[name]
-    #    else: return T(name)
+    def T2(name):
+        if name in local_vars:
+            return local_vars[name]
+        else: return T(name)
 
-    return t_image
+    return T2
 
 
 def compute_loss(input_image, model, filter_index):

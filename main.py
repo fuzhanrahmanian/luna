@@ -28,14 +28,13 @@ model = models.model_inceptionv3()
 # model = models.model_alexnet()
 #image = images.initialize_image(224, 224)
 
-image = lambda: images.initialize_image_luna(224, fft=True, decorrelate=True)
+image = lambda: images.initialize_image_luna(227, fft=True, decorrelate=True)
 
 #image_old = images.initialize_image(224, 224)
-
+print(image)
 #image = tf.transpose(image(), [0,3, 1,2])
 
 
-print(np.shape(image()))
 
 #'inception_4b/output'
 #'mixed6'
