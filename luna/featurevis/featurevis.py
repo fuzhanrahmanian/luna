@@ -124,25 +124,15 @@ def visualize_filter(param_f, model, layer, filter_index, iterations,
 
     feature_extractor = get_feature_extractor(model, layer)
 
-    t_image = make_vis_T(model, layer, filter_index, learning_rate, param_f, transforms)
-    #loss, vis_op, t_image = T("loss"), T("vis_op"), T("input")
+    T = make_vis_T(model, layer, filter_index, learning_rate, param_f, transforms)
+    loss, vis_op, t_image = T("loss"), T("vis_op"), T("input")
+
+    for i in range(iterations): 
+        vis_op(t_image)
     #tf.compat.v1.global_variables_initializer().run()
     #images = []
 
-    print('Starting Feature Vis Process')
-    for iteration in range(iterations):
-        pctg = int(iteration / iterations * 100)
-        image = add_noise(t_image, noise, pctg)
-        image = blur_image(t_image, blur, pctg)
-        image = rescale_image(t_image, scale, pctg)
-        loss, image = gradient_ascent_step(
-            t_image, feature_extractor, filter_index, learning_rate)
-        print('>>', pctg, '%', end="\r", flush=True)
-
-    print('>> 100 %')
-    # Decode the resulting input image
-    image = imgs.deprocess_image(image[0].numpy())
-    return loss, image
+    return  t_image
 
 
 def make_t_image(param_f):
@@ -206,18 +196,23 @@ def make_vis_T(model, layer, filter_index, learning_rate, param_f=None, transfor
   """
 
     t_image = make_t_image(param_f)
-    objective_f = objectives.as_objective("{}:{}".format(layer, filter_index))
+
     transform_f = make_transform_f(transforms)
     #t_image = transform_f(t_image)
     optimizer =  make_optimizer(tf.compat.v1.train.AdamOptimizer(learning_rate = learning_rate), [])
     global_step = tf.compat.v1.train.get_or_create_global_step()
-    T = model(t_image)
+    T = import_model(model, transform_f(t_image), t_image)
+
     #init_global_step = tf.compat.v1.variables_initializer([global_step])
     #init_global_step.run()
     #T = import_model(model, transform_f(t_image), t_image)
     #t_activation = T[:, 2:-2, 2:-2, filter_index]
     #loss = lambda : tf.reduce_mean(t_activation)
+    objective_f = objectives.as_objective("{}:{}".format(layer, filter_index))
     loss = objective_f(T)
+    # get the tensor of that layer 
+    #output of the neuron and not loss function
+
     vis_op = optimizer.minimize(-loss, global_step=global_step)
     local_vars = locals()
 
@@ -294,14 +289,16 @@ def make_transform_f(transforms):
     transform_f = transform.compose(transforms)
     return transform_f
 
+
 def import_model(model, t_image, t_image_raw):
 
-    model.import_graph(t_image, scope="import", forget_xy_shape=True)
-
+    #model.import_graph(t_image, scope="import", forget_xy_shape=True)
+    
     def T(layer):
         if layer == "input": return t_image_raw
         if layer == "labels": return model.labels
-        return t_image.graph.get_tensor_by_name("import/%s:0"%layer)
+        return model.get_layer(layer).output
+        #return t_image.graph.get_tensor_by_name("import/%s:0"%layer)
 
     return T
 
@@ -316,3 +313,17 @@ def make_optimizer(optimizer, args):
         print("Could not convert optimizer argument to usable optimizer. "
             "Needs to be one of None, function from (graph, sess) to "
             "optimizer, or tf.train.Optimizer instance.")
+
+
+def import_graph(self, t_input=None, scope='import', forget_xy_shape=True):
+    """Import model GraphDef into the current graph."""
+    if self.graph_def is None:
+      raise Exception("Model.import_graph(): Must load graph def before importing it.")
+    graph = tf.get_default_graph()
+    assert graph.unique_name(scope, False) == scope, (
+        'Scope "%s" already exists. Provide explicit scope names when '
+        'importing multiple instances of the model.') % scope
+    t_input, t_prep_input = self.create_input(t_input, forget_xy_shape)
+    tf.import_graph_def(
+        self.graph_def, {self.input_name: t_prep_input}, name=scope)
+    self.post_import(scope)

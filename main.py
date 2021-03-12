@@ -3,6 +3,7 @@ from luna.pretrained_models import models
 from luna.featurevis import featurevis, images, image_reader
 import tensorflow as tf
 import numpy as np
+tf.compat.v1.disable_eager_execution()
 
 
 parser = argparse.ArgumentParser()
@@ -23,7 +24,7 @@ model = models.model_inceptionv3()
 #model = models.model_inceptionv1()
 #model = models.model_inceptionv1_slim()
 #model = models.model_vgg16()
-
+print(model.get_layer(layer_name).output)
 # model.summary()
 # model = models.model_alexnet()
 #image = images.initialize_image(224, 224)
@@ -33,6 +34,7 @@ image = lambda: images.initialize_image_luna(227, fft=True, decorrelate=True)
 #image_old = images.initialize_image(224, 224)
 print(image)
 #image = tf.transpose(image(), [0,3, 1,2])
+
 
 
 
