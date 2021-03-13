@@ -121,7 +121,9 @@ def visualize_filter(image, model, layer, filter_index, iterations,
     feature_extractor = get_feature_extractor(model, layer)
     print('Starting Feature Vis Process')
     for iteration in range(iterations):
+
         pctg = int(iteration / iterations * 100)
+        #transform
         image = add_noise(image, noise, pctg)
         image = blur_image(image, blur, pctg)
         image = rescale_image(image, scale, pctg)
@@ -131,7 +133,7 @@ def visualize_filter(image, model, layer, filter_index, iterations,
 
     print('>> 100 %')
     # Decode the resulting input image
-    image = imgs.deprocess_image(image[0].numpy())
+    image = imgs.deprocess_image(raw_img[0].numpy())
     return loss, image
 
 
@@ -153,7 +155,7 @@ def compute_loss(input_image, model, filter_index):
     if tf.compat.v1.keras.backend.image_data_format() == "channels_first":
         filter_activation = activation[:, filter_index, 2:-2, 2:-2]
     else:
-        filter_activation = activation[:, 2:-2, 2:-2, filter_index]
+        filter_activation = activation[...,filter_index]
     return tf.reduce_mean(filter_activation)
 
 
@@ -172,14 +174,20 @@ def gradient_ascent_step(img, model, filter_index, learning_rate):
     Returns:
         tuple: the loss and the modified image
     """
+    opt= tf.keras.optimizers.Adam(learning_rate=learning_rate)
     with tf.GradientTape() as tape:
         tape.watch(img)
-        loss = compute_loss(img, model, filter_index)
+        loss = -compute_loss(img, model, filter_index)
+
+    #opt.minimize(-loss, [img])
     # Compute gradients.
     grads = tape.gradient(loss, img)
     # Normalize gradients.
-    grads = tf.math.l2_normalize(grads)
-    img += learning_rate * grads
+    #grads = tf.math.l2_normalize(grads)
+    opt.apply_gradients((grads, img))
+
+
+    #img += learning_rate * grads
     return loss, img
 
 
