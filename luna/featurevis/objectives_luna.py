@@ -3,6 +3,7 @@
 from decorator import decorator
 import tensorflow as tf
 
+
 class Objective(object):
     """"A wrapper to make objective functions easy to combine.
 
@@ -30,13 +31,14 @@ class Objective(object):
 
     def __add__(self, other):
         if isinstance(other, (int, float)):
-            objective_func = lambda T: other + self(T)
+            def objective_func(T): return other + self(T)
             name = self.name
             description = self.description
         else:
-            objective_func = lambda T: self(T) + other(T)
+            def objective_func(T): return self(T) + other(T)
             name = ", ".join([self.name, other.name])
-            description = "Sum(" + " +\n".join([self.description, other.description]) + ")"
+            description = "Sum(" + \
+                " +\n".join([self.description, other.description]) + ")"
         return Objective(objective_func, name=name, description=description)
 
     def __neg__(self):
@@ -47,7 +49,7 @@ class Objective(object):
 
     @staticmethod
     def sum(objs):
-        objective_func = lambda T: sum([obj(T) for obj in objs])
+        def objective_func(T): return sum([obj(T) for obj in objs])
         descriptions = [obj.description for obj in objs]
         description = "Sum(" + " +\n".join(descriptions) + ")"
         names = [obj.name for obj in objs]
@@ -56,9 +58,9 @@ class Objective(object):
 
     def __mul__(self, other):
         if isinstance(other, (int, float)):
-            objective_func = lambda T: other * self(T)
+            def objective_func(T): return other * self(T)
         else:
-            objective_func = lambda T: self(T) * other(T)
+            def objective_func(T): return self(T) * other(T)
         return Objective(objective_func, name=self.name, description=self.description)
 
     def __rmul__(self, other):
@@ -92,13 +94,14 @@ def wrap_objective(f, *args, **kwds):
     description = objective_name.title() + args_str
     return Objective(objective_func, objective_name, description)
 
+
 @wrap_objective
 def channel(layer, n_channel, batch=None):
     """Visualize a single channel"""
     if batch is None:
-        return lambda T: tf.reduce_mean(T(layer)[..., n_channel])
+        return lambda T: tf.reduce_mean(T[..., n_channel])
     else:
-        return lambda T: tf.reduce_mean(T(layer)[batch, ..., n_channel])
+        return lambda T: tf.reduce_mean(T[batch, ..., n_channel])
 
 
 def as_objective(obj):

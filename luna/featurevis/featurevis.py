@@ -9,6 +9,8 @@ from luna.featurevis import images as imgs
 from luna.featurevis import objectives_luna as objectives
 from luna.featurevis import transform_luna_v2 as transform
 
+import tqdm
+from tqdm import tqdm
 
 
 def add_noise(img, noise, pctg):
@@ -124,15 +126,15 @@ def visualize_filter(param_f, model, layer, filter_index, iterations,
 
     feature_extractor = get_feature_extractor(model, layer)
 
-    T = make_vis_T(model, layer, filter_index, learning_rate, param_f, transforms)
-    loss, vis_op, t_image = T("loss"), T("vis_op"), T("input")
+    loss3, t_image_2 = make_vis_T(model, layer, filter_index,
+                                  learning_rate, param_f, transforms, iterations)
+    #loss, vis_op, t_image = T("loss"), T("vis_op"), T("input")
 
-    for i in range(iterations): 
-        vis_op(t_image)
-    #tf.compat.v1.global_variables_initializer().run()
-    #images = []
+    print(t_image_2)
+    print(t_image_2[0].numpy())
+    t_image_2 = t_image_2[0].numpy()
 
-    return  t_image
+    return loss3, t_image_2
 
 
 def make_t_image(param_f):
@@ -143,15 +145,16 @@ def make_t_image(param_f):
     elif isinstance(param_f, tf.Tensor):
         t_image = param_f
     else:
-        raise TypeError("Incompatible type for param_f, " + str(type(param_f)) )
+        raise TypeError("Incompatible type for param_f, " + str(type(param_f)))
 
     if not isinstance(t_image, tf.Tensor):
         raise TypeError("param_f should produce a Tensor, but instead created a "
-                    + str(type(t_image)) )
+                        + str(type(t_image)))
     else:
         return t_image
 
-def make_vis_T(model, layer, filter_index, learning_rate, param_f=None, transforms=None):
+
+def make_vis_T(model, layer, filter_index, learning_rate, param_f=None, transforms=None, epc_num=500):
     """Even more flexible optimization-base feature vis.
 
   This function is the inner core of render_vis(), and can be used
@@ -197,31 +200,50 @@ def make_vis_T(model, layer, filter_index, learning_rate, param_f=None, transfor
 
     t_image = make_t_image(param_f)
 
+    t_image_2 = tf.Variable(make_t_image(param_f))
+    objective_f = objectives.as_objective("{}:{}".format(layer, filter_index))
     transform_f = make_transform_f(transforms)
     #t_image = transform_f(t_image)
-    optimizer =  make_optimizer(tf.compat.v1.train.AdamOptimizer(learning_rate = learning_rate), [])
+    optimizer = make_optimizer(
+        tf.compat.v1.train.AdamOptimizer(learning_rate=learning_rate), [])
+    optimizer_2 = tf.keras.optimizers.Adam(learning_rate=learning_rate)
+
     global_step = tf.compat.v1.train.get_or_create_global_step()
     T = import_model(model, transform_f(t_image), t_image)
 
-    #init_global_step = tf.compat.v1.variables_initializer([global_step])
-    #init_global_step.run()
-    #T = import_model(model, transform_f(t_image), t_image)
-    #t_activation = T[:, 2:-2, 2:-2, filter_index]
-    #loss = lambda : tf.reduce_mean(t_activation)
-    objective_f = objectives.as_objective("{}:{}".format(layer, filter_index))
-    loss = objective_f(T)
-    # get the tensor of that layer 
-    #output of the neuron and not loss function
+    feature_extractor = get_feature_extractor(model, layer)
+    for i in tqdm(range(epc_num)):
+        pctg = int(i/epc_num*100)
+        with tf.GradientTape(persistent=True) as tape:
+            tape.watch(t_image)
+            tape.watch(t_image_2)
+            #T1 = model(t_image)
+            #T2 = model(t_image_2)
+            T3 = model(transform_f(t_image_2))
+            #loss = -objective_f(T1)
+            #loss_2 = -objective_f(T2)
 
-    vis_op = optimizer.minimize(-loss, global_step=global_step)
-    local_vars = locals()
+            #activation1 = feature_extractor(t_image_2)
+            #activation2 = feature_extractor(t_image_2)
+            # We avoid border artifacts by only involving non-border pixels in the loss.
+            # if tf.compat.v1.keras.backend.image_data_format() == "channels_first":
+            #    filter_activation = activation1[:, filter_index, 2:-2, 2:-2]
+            # else:
+            #    filter_activation = activation1[:, 2:-2, 2:-2, filter_index]
+            #loss3 = tf.reduce_mean(activation1)
+            #loss4 = tf.reduce_mean(activation2)
+            loss3 = -objective_f(T3)
+        #gradients2 = tape.gradient(loss_2, [t_image_2])
+        gradients3 = tape.gradient(loss3, [t_image_2])
+        #gradients4 = tape.gradient(loss4, [t_image_2])
 
-    def T2(name):
-        if name in local_vars:
-            return local_vars[name]
-        else: return T(name)
-
-    return T2
+        #optimizer_2.apply_gradients(zip(gradients, [t_image]))
+        #vis_opt_1 = optimizer_2.apply_gradients(zip(gradients2, [t_image_2]))
+        #optimizer_2.apply_gradients(zip(gradients3, [t_image]))
+        #vis_opt_2 = optimizer_2.apply_gradients(zip(gradients4, [t_image_2]))
+        optimizer_2.apply_gradients(zip(gradients3, [t_image_2]))
+        print('>>', pctg, '%', end="\r", flush=True)
+    return loss3, t_image_2
 
 
 def compute_loss(input_image, model, filter_index):
@@ -293,14 +315,17 @@ def make_transform_f(transforms):
 def import_model(model, t_image, t_image_raw):
 
     #model.import_graph(t_image, scope="import", forget_xy_shape=True)
-    
+
     def T(layer):
-        if layer == "input": return t_image_raw
-        if layer == "labels": return model.labels
+        if layer == "input":
+            return t_image_raw
+        if layer == "labels":
+            return model.labels
         return model.get_layer(layer).output
-        #return t_image.graph.get_tensor_by_name("import/%s:0"%layer)
+        # return t_image.graph.get_tensor_by_name("import/%s:0"%layer)
 
     return T
+
 
 def make_optimizer(optimizer, args):
     if optimizer is None:
@@ -311,14 +336,15 @@ def make_optimizer(optimizer, args):
         return optimizer
     else:
         print("Could not convert optimizer argument to usable optimizer. "
-            "Needs to be one of None, function from (graph, sess) to "
-            "optimizer, or tf.train.Optimizer instance.")
+              "Needs to be one of None, function from (graph, sess) to "
+              "optimizer, or tf.train.Optimizer instance.")
 
 
 def import_graph(self, t_input=None, scope='import', forget_xy_shape=True):
     """Import model GraphDef into the current graph."""
     if self.graph_def is None:
-      raise Exception("Model.import_graph(): Must load graph def before importing it.")
+        raise Exception(
+            "Model.import_graph(): Must load graph def before importing it.")
     graph = tf.get_default_graph()
     assert graph.unique_name(scope, False) == scope, (
         'Scope "%s" already exists. Provide explicit scope names when '
