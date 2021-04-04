@@ -246,11 +246,11 @@ def deprocess_image(img):
     """
     print('Deprocessing image')
     # Normalize array between 0 and 1
-    #img = (img - np.min(img)) / (np.max(img) - np.min(img))
+    img = (img - np.min(img)) / (np.max(img) - np.min(img))
 
     # Convert to RGB array
-    #img *= 255
-    #img = img.astype("uint8")
+    img *= 255
+    img = img.astype("uint8")
     return img
 
 

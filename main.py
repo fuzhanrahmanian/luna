@@ -11,10 +11,10 @@ import os
 parser = argparse.ArgumentParser()
 
 parser.add_argument("-a", "--architecture", type=str,
-                    default="inceptionV3", help="The model architecture")
+                    default="inceptionv3", help="The model architecture")
 parser.add_argument("-l", "--layerName", type=str, default="mixed6",
                     help="The chosen layer of the model architecture")
-parser.add_argument("-c", "--channelNum", type=int, default=1,
+parser.add_argument("-c", "--channelNum", type=int, default=7,
                     help="The chosen channel index of the defined model architecture's layer ")
 args = parser.parse_args()
 
@@ -46,7 +46,7 @@ print(image)
 # 'mixed6'
 #loss, image
 loss3, t_image_2 = featurevis.visualize_filter(image(), model, layer_name,
-                                               channel_num, 2640, 0.05, 0, True, 0, transforms=None)
+                                               channel_num, 2600, 0.05, transforms=None)
 name = "feature_vis_{}_{}_{}".format(
     arch, layer_name.replace("/", "-"), channel_num)
 print(loss3)

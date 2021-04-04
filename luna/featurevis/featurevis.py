@@ -8,6 +8,7 @@ from tensorflow import keras
 from luna.featurevis import images as imgs
 from luna.featurevis import objectives_luna as objectives
 from luna.featurevis import transform_luna_v2 as transform
+from luna.featurevis import relu_grad as rg
 
 import tqdm
 from tqdm import tqdm
@@ -106,7 +107,7 @@ def gaussian_blur(img, kernel_size=3, sigma=5):
 
 
 def visualize_filter(param_f, model, layer, filter_index, iterations,
-                     learning_rate, noise, blur, scale, transforms):
+                     learning_rate, transforms):
     """Create a feature visualization for a filter in a layer of the model.
 
     Args:
@@ -133,7 +134,7 @@ def visualize_filter(param_f, model, layer, filter_index, iterations,
     print(t_image_2)
     print(t_image_2[0].numpy())
     t_image_2 = t_image_2[0].numpy()
-
+    #t_image_2 = imgs.deprocess_image(t_image_2)
     return loss3, t_image_2
 
 
@@ -204,12 +205,12 @@ def make_vis_T(model, layer, filter_index, learning_rate, param_f=None, transfor
     objective_f = objectives.as_objective("{}:{}".format(layer, filter_index))
     transform_f = make_transform_f(transforms)
     #t_image = transform_f(t_image)
-    optimizer = make_optimizer(
-        tf.compat.v1.train.AdamOptimizer(learning_rate=learning_rate), [])
+    #optimizer = make_optimizer(
+    #   tf.compat.v1.train.AdamOptimizer(learning_rate=learning_rate), [])
     optimizer_2 = tf.keras.optimizers.Adam(learning_rate=learning_rate)
 
-    global_step = tf.compat.v1.train.get_or_create_global_step()
-    T = import_model(model, transform_f(t_image), t_image)
+    #global_step = tf.compat.v1.train.get_or_create_global_step()
+    #T = import_model(model, transform_f(t_image), t_image)
 
     feature_extractor = get_feature_extractor(model, layer)
     for i in tqdm(range(epc_num)):
@@ -218,23 +219,26 @@ def make_vis_T(model, layer, filter_index, learning_rate, param_f=None, transfor
             tape.watch(t_image)
             tape.watch(t_image_2)
             #T1 = model(t_image)
-            #T2 = model(t_image_2)
-            T3 = model(transform_f(t_image_2))
+            #T3 = model(t_image_2)
+            with rg.gradient_override_map({'Relu': rg.redirected_relu_grad,
+                                'Relu6': rg.redirected_relu6_grad}):
+                T3 = model(transform_f(t_image_2))
             #loss = -objective_f(T1)
             #loss_2 = -objective_f(T2)
 
-            #activation1 = feature_extractor(t_image_2)
+            #activation1 = feature_extractor(transform(t_image_2))
             #activation2 = feature_extractor(t_image_2)
             # We avoid border artifacts by only involving non-border pixels in the loss.
-            # if tf.compat.v1.keras.backend.image_data_format() == "channels_first":
+            #if tf.compat.v1.keras.backend.image_data_format() == "channels_first":
             #    filter_activation = activation1[:, filter_index, 2:-2, 2:-2]
-            # else:
+            #else:
             #    filter_activation = activation1[:, 2:-2, 2:-2, filter_index]
             #loss3 = tf.reduce_mean(activation1)
             #loss4 = tf.reduce_mean(activation2)
-            loss3 = -objective_f(T3)
+            loss3 = objective_f(T3)
         #gradients2 = tape.gradient(loss_2, [t_image_2])
         gradients3 = tape.gradient(loss3, [t_image_2])
+        print(loss3)
         #gradients4 = tape.gradient(loss4, [t_image_2])
 
         #optimizer_2.apply_gradients(zip(gradients, [t_image]))
@@ -345,7 +349,7 @@ def import_graph(self, t_input=None, scope='import', forget_xy_shape=True):
     if self.graph_def is None:
         raise Exception(
             "Model.import_graph(): Must load graph def before importing it.")
-    graph = tf.get_default_graph()
+    graph = tf.compat.v1.get_default_graph()
     assert graph.unique_name(scope, False) == scope, (
         'Scope "%s" already exists. Provide explicit scope names when '
         'importing multiple instances of the model.') % scope
