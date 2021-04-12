@@ -3,10 +3,50 @@ The main file for the feature vis process
 """
 from __future__ import absolute_import, division, print_function
 import tensorflow as tf
-
+import random
+#tf.compat.v1.disable_eager_execution()
 from tensorflow import keras
 from luna.featurevis import images as imgs
+from luna.featurevis import transform
+#from luna.featurevis import relu_grad as rg
+#tf.config.run_functions_eagerly(True)
+import tensorflow_addons as tfa
+from luna.featurevis import relu_grad as rg
 
+
+def compose(transforms):
+    def inner(x):
+        for transform in transforms:
+            x = transform(x)
+        return x
+
+    return inner
+
+
+
+def _rand_select(xs, seed=None):
+    xs_list = list(xs)
+    rand_n = tf.random.uniform((), 0, len(xs_list), "int32", seed=seed)
+    return tf.constant(xs_list)[rand_n]
+
+
+def _angle2rads(angle, units):
+    angle = tf.cast(angle, "float32")
+    if units.lower() == "degrees":
+        angle = 3.14 * angle / 180.
+    elif units.lower() in ["radians", "rads", "rad"]:
+        angle = angle
+    return angle
+
+
+def crop_or_pad_to(height, width):
+    """Ensures the specified spatial shape by either padding or cropping.
+    Meant to be used as a last transform for architectures insisting on a specific
+    spatial shape of their inputs.
+    """
+    def inner(t_image):
+        return tf.image.resize_with_crop_or_pad(t_image, height, width)
+    return inner
 
 def add_noise(img, noise, pctg):
     """Adds noise to the image to be manipulated.
@@ -23,15 +63,56 @@ def add_noise(img, noise, pctg):
     """
     if noise:
         if tf.compat.v1.keras.backend.image_data_format() == "channels_first":
-            img_noise = tf.random.uniform((1, 3, len(img[2]), len(img[3])),
+            img_noise = tf.random.uniform((img.shape),
                                           dtype=tf.dtypes.float32)
         else:
-            img_noise = tf.random.uniform((1, len(img[1]), len(img[2]), 3),
+            img_noise = tf.random.uniform((img.shape),
                                           dtype=tf.dtypes.float32)
         img_noise = (img_noise - 0.5) * 0.25 * ((100 - pctg) / 100)
         img = img + img_noise
         img = tf.clip_by_value(img, -1, 1)
     return img
+
+def jitter(image, d, seed=None):
+
+    image = tf.convert_to_tensor(value=image, dtype_hint=tf.float32)
+    t_shp = tf.shape(input=image)
+    crop_shape = tf.concat([t_shp[:-3], t_shp[-3:-1] - d, t_shp[-1:]], 0)
+    crop = tf.image.random_crop(image, crop_shape, seed=seed)
+    shp = image.get_shape().as_list()
+    mid_shp_changed = [
+        shp[-3] - d if shp[-3] is not None else None,
+        shp[-2] - d if shp[-3] is not None else None,
+    ]
+    crop.set_shape(shp[:-3] + mid_shp_changed + shp[-1:])
+    return crop
+
+def random_scale(scales, seed=None):
+    def inner(t):
+        t = tf.convert_to_tensor(value=t, dtype_hint=tf.float32)
+        scale = _rand_select(scales, seed=seed)
+        shp = tf.shape(input=t)
+        scale_shape = tf.cast(scale * tf.cast(shp[-3:-1], "float32"), "int32")
+        return tf.image.resize(t, scale_shape, method=tf.image.ResizeMethod.BILINEAR)
+
+    return inner
+
+
+def random_rotate(image, angles, units="degrees", seed=None):
+        t = tf.convert_to_tensor(value=t, dtype_hint=tf.float32)
+        angle = _rand_select(angles, seed=seed)
+        angle = _angle2rads(angle, units)
+
+    #return tf.image.rotate(t, angle)
+
+
+def pad(img, w, mode="REFLECT", constant_value=0.5):
+
+    if constant_value == "uniform":
+        constant_value_ = tf.random.uniform([], 0, 1)
+    else:
+        constant_value_ = constant_value
+    return tf.pad(img, paddings=[(0, 0), (w, w), (w, w), (0, 0)], mode=mode, constant_values=constant_value_)
 
 
 def blur_image(img, blur, pctg):
@@ -61,8 +142,11 @@ def rescale_image(img, scale, pctg):
     :return: the altered image
     """
     if scale:
-        scale_factor = tf.random.normal([1], 1, pctg)
-        img *= scale_factor[0]  # not working
+        scale_factor = [1, 0.975, 1.025, 0.95, 1.05]
+        factor = random.choice(scale_factor)
+        #scale_factor = tf.random.normal([1], 1, pctg)
+        #img *= scale_factor[0].numpy()  # working
+        img = img * factor
     return img
 
 
@@ -99,6 +183,12 @@ def gaussian_blur(img, kernel_size=3, sigma=5):
     return tf.nn.depthwise_conv2d(img, gaussian_kernel, [1, 1, 1, 1],
                                   padding='SAME', data_format='NHWC')
 
+def make_transform_f(transforms):
+    if type(transforms) is not list:
+        transforms = transform.standard_transforms
+    transform_f = transform.compose(transforms)
+    return transform_f
+
 
 def visualize_filter(image, model, layer, filter_index, iterations,
                      learning_rate, noise, blur, scale):
@@ -118,23 +208,61 @@ def visualize_filter(image, model, layer, filter_index, iterations,
     Returns:
         tuple: loss and result image for the process
     """
+    image = tf.Variable(image)
+    #transform_f = make_transform_f(transforms)
+    optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
     feature_extractor = get_feature_extractor(model, layer)
+    choice_num = [0, 1, 2, 3]
+    augmentation = ['noise', 'blur', 'scale']
     print('Starting Feature Vis Process')
     for iteration in range(iterations):
         pctg = int(iteration / iterations * 100)
-        image = add_noise(image, noise, pctg)
-        image = blur_image(image, blur, pctg)
-        image = rescale_image(image, scale, pctg)
-        loss, image = gradient_ascent_step(
-            image, feature_extractor, filter_index, learning_rate)
-        print('>>', pctg, '%', end="\r", flush=True)
+        image_aug = {'noise':add_noise(image, noise, pctg), 'blur': blur_image(image, blur, pctg), 'scale':rescale_image(image, scale, pctg)}
+        num = random.choice(choice_num)
+        
+        image = jitter(image, random.choice([i for i in range(4)]))
+        if num ==1:
+            ind = random.sample(augmentation, 1)
+            print(ind)
+            image = image_aug[ind[0]]
+        if num ==2:
+            ind = random.sample(augmentation, 2)
+            print(ind)
+            image = image_aug[ind[0]]
+            image = image_aug[ind[1]]
+        else:
+            image = add_noise(image, noise, pctg)
+            image = blur_image(image, blur, pctg)
+            image = rescale_image(image, scale, pctg)
+        #print(image.shape)
+        #print(image.shape[1])
+        #pad_size = random.choice([i for i in range(16)])
+        #image = tf.image.resize_with_pad(image, image.shape[1]+pad_size, image.shape[1]+pad_size)
+        #crop_size = random.choice([i for i in range(16)])
+        #image = tf.image.crop_and_resize(image, tf.random.uniform(shape=(5, 4)), tf.random.uniform(shape=(5,), minval=0, maxval=1, dtype=tf.int32), (crop_size, crop_size))
+        #image = tfa.image.rotate(image, random.choice([-5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5]))
 
+        
+        #image = add_noise(image, noise, pctg)
+        #image = blur_image(image, blur, pctg)
+        #image = rescale_image(image, scale, pctg)
+        #img = transform_f(img)
+        #print(type(image))
+        #image = transform_f(image)
+        
+        #image = tf.Variable(image)
+        #print(f"type of image after transformation is {type(image)}")
+        loss, image = gradient_ascent_step(
+            image, feature_extractor, filter_index, learning_rate, optimizer)
+
+        print('>>', pctg, '%', end="\r", flush=True)
+    print(f"loss is {loss} and image is {image}")
     print('>> 100 %')
     # Decode the resulting input image
     image = imgs.deprocess_image(image[0].numpy())
     return loss, image
 
-
+#@tf.function
 def compute_loss(input_image, model, filter_index):
     """Computes the loss for the feature visualization process.
 
@@ -148,17 +276,20 @@ def compute_loss(input_image, model, filter_index):
     Returns:
         number: the loss for the specified setting
     """
-    activation = model(input_image)
+    with rg.gradient_override_map({'Relu': rg.redirected_relu_grad,'Relu6': rg.redirected_relu6_grad}):
+        activation = model(input_image)
+    #activation = model(input_image)
     # We avoid border artifacts by only involving non-border pixels in the loss.
     if tf.compat.v1.keras.backend.image_data_format() == "channels_first":
-        filter_activation = activation[:, filter_index, 2:-2, 2:-2]
+        filter_activation = activation[:, filter_index, :, :]
     else:
-        filter_activation = activation[:, 2:-2, 2:-2, filter_index]
+        filter_activation = activation[:, :, :, filter_index]
+    #return tf.reduce_mean(tf.square(filter_activation, input_image))
     return tf.reduce_mean(filter_activation)
 
 
-@tf.function
-def gradient_ascent_step(img, model, filter_index, learning_rate):
+#@tf.function
+def gradient_ascent_step(img, model, filter_index, learning_rate, optimizer):
     """Performing one step of gradient ascend.
 
     Args:
@@ -172,13 +303,25 @@ def gradient_ascent_step(img, model, filter_index, learning_rate):
     Returns:
         tuple: the loss and the modified image
     """
+
     with tf.GradientTape() as tape:
         tape.watch(img)
         loss = compute_loss(img, model, filter_index)
     # Compute gradients.
+    #optim = tf.compat.v1.train.AdamOptimizer(learning_rate=learning_rate)
+    #loss = compute_loss(img, model, filter_index)
+    #print(f"type of loss is {type(loss)}")
+    #loss = lambda : compute_loss(img, model, filter_index)
+    #loss = loss(img, model, filter_index)
+    #optim.minimize(-loss, var_list=[img])
+
+    #tf.compat.v1.train.AdamOptimizer(learning_rate).minimize(loss, var_list=[img])
+    #optimizer.minimize(loss, var_list=[img])
+    #img.numpy()
     grads = tape.gradient(loss, img)
     # Normalize gradients.
     grads = tf.math.l2_normalize(grads)
+    #optimizer.apply_gradients(zip([grads], [img]))
     img += learning_rate * grads
     return loss, img
 

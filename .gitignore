@@ -186,6 +186,7 @@ report.txt
 
 
 ### VisualStudioCode ###
+.docx
 .vscode/*
 !.vscode/tasks.json
 !.vscode/launch.json
