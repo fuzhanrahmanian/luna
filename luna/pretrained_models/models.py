@@ -6,7 +6,7 @@ import tensorflow as tf
 from tensorflow import keras
 from tf_slim import nets as slim_nets
 
-from luna.pretrained_models import googlenet
+from luna.pretrained_models import googlenet, cifar10vgg
 
 
 def model_resnet50v2():
@@ -74,3 +74,13 @@ def model_vgg19():
     """
     tf.compat.v1.keras.backend.set_image_data_format('channels_last')
     return keras.applications.VGG19(weights="imagenet", include_top=False)
+
+def model_cifar10():
+    """
+    Instantiates vgg19 architecture using keras
+
+    Returns:
+        keras.applications: vgg19 Architecture
+    """
+    tf.compat.v1.keras.backend.set_image_data_format('channels_last')
+    return cifar10vgg.cifar10vgg().build_model()
