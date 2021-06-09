@@ -183,7 +183,6 @@ report.txt
 *.png
 *.npy
 /output
-main.py
 main2.py
 
 ### VisualStudioCode ###
