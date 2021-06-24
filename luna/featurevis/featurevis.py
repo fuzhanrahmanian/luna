@@ -9,6 +9,7 @@ from luna.featurevis import relu_grad as rg
 from luna.featurevis import images as imgs
 from luna.featurevis import transformations as trans
 
+
 # pylint: disable=too-few-public-methods
 class OptimizationParameters():
     """object for generalizing optimization parameters
@@ -58,7 +59,7 @@ def visualize_filter(image, model, layer, filter_index, opt_param, aug_param):
     """
     image = tf.Variable(image)
     feature_extractor = get_feature_extractor(model, layer)
-
+    loss_record = list()
     # Temporary method for random choice of
     print('Starting Feature Vis Process')
     for iteration in range(opt_param.iterations):
@@ -72,6 +73,8 @@ def visualize_filter(image, model, layer, filter_index, opt_param, aug_param):
         image = trans.color_augmentation(image, aug_param.color_aug)
         loss, image = gradient_ascent_step(
             image, feature_extractor, filter_index, opt_param.learning_rate)
+        loss_record.append(loss.numpy())
+
 
         print('>>', pctg, '%', end="\r", flush=True)
     print('>> 100 %')
@@ -80,7 +83,7 @@ def visualize_filter(image, model, layer, filter_index, opt_param, aug_param):
     # Decode the resulting input image
     image = imgs.deprocess_image(image[0].numpy())
 
-    return loss, image
+    return loss, image, loss_record
 
 
 def compute_loss(input_image, model, filter_index):
@@ -102,8 +105,8 @@ def compute_loss(input_image, model, filter_index):
         filter_activation = activation[:, filter_index, :, :]
     else:
         filter_activation = activation[:, :, :, filter_index]
-    return tf.reduce_mean(filter_activation)
-
+    return tf.reduce_mean(filter_activation) # this is not loss , this is just activation 
+ 
 
 @tf.function()
 def gradient_ascent_step(img, model, filter_index, learning_rate):

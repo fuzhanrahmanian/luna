@@ -1,4 +1,4 @@
-
+# ref: https://github.com/geifmany/cifar-vgg
 from __future__ import print_function
 import keras
 from keras.datasets import cifar10

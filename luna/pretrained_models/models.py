@@ -84,3 +84,12 @@ def model_cifar10():
     """
     tf.compat.v1.keras.backend.set_image_data_format('channels_last')
     return cifar10vgg.cifar10vgg().build_model()
+
+
+def model_mobilenetV2():
+    tf.compat.v1.keras.backend.set_image_data_format('channels_last')
+    return tf.keras.applications.mobilenet_v2.MobileNetV2(include_top=True, weights='imagenet')
+
+def model_efficientnet():
+    tf.compat.v1.keras.backend.set_image_data_format('channels_last')
+    return tf.keras.applications.EfficientNetB1(include_top=True, weights='imagenet')
