@@ -28,7 +28,7 @@ arch = args.architecture
 #output_folder = "luna/outputs/cifar10"
 
 #model = models.model_cifar10()
-#model = models.model_inceptionv3()
+model = models.model_inceptionv3()
 #model = models.model_resnet50v2()
 #model = models.model_inceptionv1()
 #model = models.model_inceptionv1_slim()
@@ -41,7 +41,7 @@ arch = args.architecture
 #     classifier_activation='softmax'
 # )
 #model = models.model_mobilenetV2()
-model = models.model_efficientnet()
+#model = models.model_efficientnet()
 
 
 
@@ -64,28 +64,29 @@ model.summary()    #in the case that we dont know the name of the layers.
 #i = 1
 #for a in range(110,140):
 
-output_folder = r"C:\Users\lucaz\Documents\Fuzhi\GitHub\luna\luna\outputs\efficientnet"
+output_folder = r"C:\Users\lucaz\Documents\Fuzhi\GitHub\luna\luna\outputs\inceptionv3"
 #def image(): return images.initialize_image_luna(299, fft=True, decorrelate=True)
 #image = images.initialize_image_ref(32,32, decorrelate=True)
-layer_name_comp_inception_v3 = ["mixed4", "mixed5", "mixed5", "mixed6", "mixed6"]
+layer_name_comp_inception_v3 = ["mixed5"]
 layer_name_cifar10 = ["conv2d_3", "conv2d_6", "conv2d_8", "conv2d_12"]
 layer_name_mobilenet = ["block_7_expand", "block_10_expand", "block_14_expand", "block_16_expand"]
 layer_name_efficientnet = ["block7b_se_expand", "block6b_se_expand", "block5c_se_expand", "block5b_se_expand"]
-channel_num_comp = [11, 52, 13, 563]
+channel_num_comp = [30]
 model_name = "efficientnet"
-for layer_name, channel_num in zip(layer_name_efficientnet, channel_num_comp):
-    image = images.initialize_image(240, 240)
+for layer_name, channel_num in zip(layer_name_comp_inception_v3, channel_num_comp):
+    image = images.initialize_image(224, 224)
     print(image)
-    opt_param = featurevis.OptimizationParameters(3500, 0.7)
+    opt_param = featurevis.OptimizationParameters(3500, 0.65)
     aug_param = featurevis.AugmentationParameters(blur= True, scale= True, pad_crop=False, flip=False,
                                                     rotation=False, noise=False, color_aug=False)
     #print(image)
-    loss, image, loss_record = featurevis.visualize_filter(image, model, layer_name, channel_num, opt_param, aug_param)
+    loss, image, loss_record, activation = featurevis.visualize_filter(image, model, layer_name, channel_num, opt_param, aug_param)
     #name = "feature_vis_{}_{}_{}".format(
     #    arch, layer_name.replace("/", "-"), channel_num)
-    name = "feature_vis_{}_{}_{}".format(model_name, layer_name, channel_num)
+    name = "feature_vis_{}_{}_{}".format(arch, layer_name, channel_num)
     print(loss)
     print(loss_record)
+    print(activation)
     plt.plot(loss_record)
     #plt.ylim((-15, 0))
     plt.xlabel("Epochs")

@@ -213,5 +213,5 @@ if __name__ == '__main__':
     loss = sum(residuals)/len(residuals)
     print("the validation 0/1 loss is: ",loss)
 
-
-
+# layer 40 channel 10
+# internal activation 12 > 3.4 (this is for one image)---> record the highest from the cifar iamges

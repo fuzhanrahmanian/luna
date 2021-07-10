@@ -28,8 +28,7 @@ def model_inceptionv3():
         keras.application: InceptionV3 Architecture
     """
     tf.compat.v1.keras.backend.set_image_data_format('channels_last')
-    return keras.applications.InceptionV3(
-        weights="imagenet", include_top=False)
+    return keras.applications.InceptionV3(weights="imagenet", include_top=False)
 
 
 def model_inceptionv1():

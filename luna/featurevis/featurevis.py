@@ -71,10 +71,9 @@ def visualize_filter(image, model, layer, filter_index, opt_param, aug_param):
         image = trans.random_flip(image, aug_param.flip)
         image = trans.vert_rotation(image, aug_param.rotation)
         image = trans.color_augmentation(image, aug_param.color_aug)
-        loss, image = gradient_ascent_step(
+        loss, image, activation = gradient_ascent_step(
             image, feature_extractor, filter_index, opt_param.learning_rate)
         loss_record.append(loss.numpy())
-
 
         print('>>', pctg, '%', end="\r", flush=True)
     print('>> 100 %')
@@ -83,7 +82,7 @@ def visualize_filter(image, model, layer, filter_index, opt_param, aug_param):
     # Decode the resulting input image
     image = imgs.deprocess_image(image[0].numpy())
 
-    return loss, image, loss_record
+    return loss, image, loss_record, activation
 
 
 def compute_loss(input_image, model, filter_index):
@@ -105,7 +104,7 @@ def compute_loss(input_image, model, filter_index):
         filter_activation = activation[:, filter_index, :, :]
     else:
         filter_activation = activation[:, :, :, filter_index]
-    return tf.reduce_mean(filter_activation) # this is not loss , this is just activation 
+    return -tf.reduce_mean(filter_activation), tf.reduce_mean(filter_activation)
  
 
 @tf.function()
@@ -124,13 +123,14 @@ def gradient_ascent_step(img, model, filter_index, learning_rate):
     """
     with tf.GradientTape() as tape:
         tape.watch(img)
-        loss = compute_loss(img, model, filter_index)
+        loss, activation = compute_loss(img, model, filter_index) #activation
+
     # Compute gradients.
     grads = tape.gradient(loss, img)
     # Normalize gradients.
     grads = tf.math.l2_normalize(grads)
-    img = img + learning_rate * grads
-    return loss, img
+    img = img - learning_rate * grads
+    return loss, img, activation
 
 
 def get_feature_extractor(model, layer_name):
