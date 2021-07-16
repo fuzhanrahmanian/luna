@@ -67,7 +67,8 @@ def visualize_filter(image, model, layer, filter_index, opt_param, aug_param):
         image = trans.crop_or_pad(image, aug_param.pad_crop)
         image = trans.add_noise(image, aug_param.noise)
         image = trans.rescale_image(image, aug_param.scale)
-        image = trans.blur_image(image, aug_param.blur)
+        if iteration%5:
+            image = trans.blur_image(image, aug_param.blur)
         image = trans.random_flip(image, aug_param.flip)
         image = trans.vert_rotation(image, aug_param.rotation)
         image = trans.color_augmentation(image, aug_param.color_aug)
